@@ -74,7 +74,7 @@ internal class MainApp
 		}
 
 		// Create output directory if it doesn't exist
-		if (!Directory.Exists(basePath))
+		if (!Directory.Exists(basePath) && config.ExtractAssetBundles)
 		{
 			Directory.CreateDirectory(basePath);
 			Console.WriteLine($"Created output directory: {basePath}");
@@ -106,13 +106,14 @@ internal class MainApp
 			parser.ParseFromName(tableName, targetType);
 		}
 
-		Directory.CreateDirectory(Path.Combine(basePath, "Bundles"));
-		Directory.CreateDirectory(Path.Combine(basePath, "Lua"));
-		Directory.CreateDirectory(Path.Combine(basePath, "Unk"));
+		if (config.ExtractAssetBundles)
+		{
+			Directory.CreateDirectory(Path.Combine(basePath, "Bundles"));
+			Directory.CreateDirectory(Path.Combine(basePath, "Lua"));
+			Directory.CreateDirectory(Path.Combine(basePath, "Unk"));
+			Directory.CreateDirectory(Path.Combine(basePath, "Proto"));
+		}
 		// Apply filtering based on configuration
-
-		if (!config.ProcessAllEntries)
-			return;
 
 		Console.WriteLine("Generating the rest of output...");
 
@@ -126,28 +127,46 @@ internal class MainApp
 			string outputPath;
 			if (StartsWith(data, "UnityFS")) // assetbundles, those are NOT in m0.pkg
 			{
+				if (!config.ExtractAssetBundles)
+					continue;
 				outputPath = Path.Combine(basePath, "Bundles", $"{key}.ab");
 				if (!config.ExtractAssetBundles)
 					continue; // skip asset bundles unless explicitly requested
 			}
 			else if (StartsWith(data, new byte[] { 0x1B, 0x4C, 0x75, 0x61 })) // Lua
 			{
+				if (!config.ExtractAssetBundles)
+					continue;
 				LuaModule.OutputLua(basePath, data, key);
 				continue;
 			}
-			else // protobufs or tables etc
+			else if (ContainsString(data, "proto3") || ContainsString(data, "proto2"))
 			{
+				DumpProtoFromBin(data);
+				if (config.ExtractAssetBundles)
+				{
+					outputPath = Path.Combine(basePath, "Proto", $"{key}.bin");
+				}
+				else
+				{
+					continue;
+				}
+			}
+			else //tables etc
+			{
+				if (!config.ExtractAssetBundles)
+					continue;
 				outputPath = Path.Combine(basePath, "Unk", $"{key}.bin");
-
-				if (ContainsString(data, "proto3") || ContainsString(data, "proto2"))
-					DumpProtoFromBin(data);
 			}
 
-			if (File.Exists(outputPath))
-				continue;
+			if (config.ExtractAssetBundles)
+			{
+				if (File.Exists(outputPath))
+					continue;
 
-			File.WriteAllBytes(outputPath, data);
-			Console.WriteLine($"Extracted {key} to {outputPath}");
+				File.WriteAllBytes(outputPath, data);
+				Console.WriteLine($"Extracted {key} to {outputPath}");
+			}
 		}
 	}
 
